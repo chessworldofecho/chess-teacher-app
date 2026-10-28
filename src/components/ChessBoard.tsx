@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Chess } from "chess.js";
-import { Chessboard } from "react-chessboard";
+
+// Dynamically import Chessboard with SSR disabled (required for Vercel/Next.js)
+const Chessboard = dynamic(
+  () => import("react-chessboard").then((mod) => mod.Chessboard),
+  { ssr: false }
+);
 
 export default function ChessBoard() {
   const [game, setGame] = useState(new Chess());
