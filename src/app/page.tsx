@@ -1,23 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ChessBoard from "@/components/ChessBoard";
 import TeacherPanel from "@/components/TeacherPanel";
 import DailyTask from "@/components/DailyTask";
+import Auth from "@/components/Auth";
+import { createClient } from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"play" | "lessons" | "daily">("play");
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    // Get current user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setUser(null);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950">
+        <p className="text-neutral-400">Loading...</p>
+      </div>
+    );
+  }
+
+  // Show login/signup if not logged in
+  if (!user) {
+    return (
+      <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+              ♔ Chess Teacher
+            </h1>
+            <p className="text-neutral-400 mt-2">
+              Learn chess with an AI coach
+            </p>
+          </div>
+          <Auth />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen p-4 md:p-8">
       {/* Header */}
-      <header className="max-w-6xl mx-auto mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-          ♔ Chess Teacher
-        </h1>
-        <p className="text-neutral-400 mt-1">
-          Learn chess with an AI coach • Daily tasks • Interactive lessons
-        </p>
+      <header className="max-w-6xl mx-auto mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+            ♔ Chess Teacher
+          </h1>
+          <p className="text-neutral-400 mt-1">
+            Learn chess with an AI coach • Daily tasks • Interactive lessons
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-neutral-400 hidden sm:inline">
+            {user.email}
+          </span>
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* Navigation Tabs */}
