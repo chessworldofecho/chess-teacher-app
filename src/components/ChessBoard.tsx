@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, type TouchEvent } from "react";
 import dynamic from "next/dynamic";
 import { Chess, Square } from "chess.js";
 import {
@@ -244,13 +244,11 @@ export default function ChessBoard({
     });
   }
 
-  function onAnalysisTouchStart(e: {
-    changedTouches: { clientX: number }[];
-  }) {
+  function onAnalysisTouchStart(e: TouchEvent<HTMLDivElement>) {
     touchStartX.current = e.changedTouches[0]?.clientX ?? null;
   }
 
-  function onAnalysisTouchEnd(e: { changedTouches: { clientX: number }[] }) {
+  function onAnalysisTouchEnd(e: TouchEvent<HTMLDivElement>) {
     if (touchStartX.current == null) return;
     const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
     const dx = endX - touchStartX.current;
