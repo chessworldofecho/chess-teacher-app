@@ -29,17 +29,25 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   god: "God Mode (~5000)",
 };
 
-export default function ChessBoard() {
+type ChessBoardProps = {
+  /** "computer" = vs bot with setup screen, "practice" = free board move both sides */
+  initialMode?: "computer" | "practice";
+};
+
+export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps) {
   const [game, setGame] = useState(new Chess());
   const [fen, setFen] = useState(game.fen());
   const [orientation, setOrientation] = useState<"white" | "black">("white");
-  const [mode, setMode] = useState<"practice" | "computer">("computer");
+  const [mode, setMode] = useState<"practice" | "computer">(initialMode);
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [isThinking, setIsThinking] = useState(false);
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [optionSquares, setOptionSquares] = useState<Record<string, any>>({});
-  const [phase, setPhase] = useState<GamePhase>("setup");
+  // Practice starts playing immediately; bot mode starts at setup
+  const [phase, setPhase] = useState<GamePhase>(
+    initialMode === "practice" ? "playing" : "setup"
+  );
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -51,7 +59,6 @@ export default function ChessBoard() {
     return audioCtxRef.current;
   }
 
-  // Short click / select sound
   function playClickSound() {
     try {
       const ctx = getAudioCtx();
@@ -69,7 +76,6 @@ export default function ChessBoard() {
     } catch {}
   }
 
-  // Move sound
   function playMoveSound(isCapture = false) {
     try {
       const ctx = getAudioCtx();
@@ -97,7 +103,6 @@ export default function ChessBoard() {
     } catch {}
   }
 
-  // Check sound (urgent)
   function playCheckSound() {
     try {
       const ctx = getAudioCtx();
@@ -116,7 +121,6 @@ export default function ChessBoard() {
     } catch {}
   }
 
-  // Checkmate sound (dramatic)
   function playCheckmateSound() {
     try {
       const ctx = getAudioCtx();
@@ -353,13 +357,20 @@ export default function ChessBoard() {
     }
   }
 
-  function resetToSetup() {
-    setPhase("setup");
-    setGame(new Chess());
-    setFen(new Chess().fen());
+  function resetBoard() {
+    const newGame = new Chess();
+    setGame(newGame);
+    setFen(newGame.fen());
     setIsThinking(false);
     setSelectedSquare(null);
     setOptionSquares({});
+
+    if (mode === "computer") {
+      setPhase("setup");
+    } else {
+      // Practice: stay on the board, just reset position
+      setPhase("playing");
+    }
   }
 
   function flipBoard() {
@@ -370,13 +381,12 @@ export default function ChessBoard() {
     return { ...optionSquares };
   }, [optionSquares]);
 
-  // ========== SETUP SCREEN ==========
-  if (phase === "setup") {
+  // ========== SETUP SCREEN (bot only) ==========
+  if (phase === "setup" && mode === "computer") {
     return (
       <div className="max-w-md mx-auto">
         <h2 className="text-2xl font-bold mb-6 text-center">Start a Game</h2>
 
-        {/* Play as */}
         <div className="mb-8">
           <p className="text-sm text-neutral-400 mb-3">Play as</p>
           <div className="grid grid-cols-2 gap-3">
@@ -403,7 +413,6 @@ export default function ChessBoard() {
           </div>
         </div>
 
-        {/* Difficulty */}
         <div className="mb-8">
           <p className="text-sm text-neutral-400 mb-3">Difficulty</p>
           <div className="flex flex-wrap gap-2">
@@ -436,10 +445,11 @@ export default function ChessBoard() {
   // ========== PLAYING SCREEN ==========
   return (
     <div className="w-full">
-      {/* Top bar */}
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="text-sm text-neutral-400">
-          vs Bot • {DIFFICULTY_LABELS[difficulty]}
+          {mode === "computer"
+            ? `vs Bot • ${DIFFICULTY_LABELS[difficulty]}`
+            : "Practice Mode • Move both sides"}
         </div>
         <div className="flex gap-2">
           <button
@@ -449,15 +459,14 @@ export default function ChessBoard() {
             Flip
           </button>
           <button
-            onClick={resetToSetup}
+            onClick={resetBoard}
             className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
           >
-            New Game
+            {mode === "computer" ? "New Game" : "Reset"}
           </button>
         </div>
       </div>
 
-      {/* BIG BOARD */}
       <div className="relative w-full mx-auto" style={{ maxWidth: "min(100%, 760px)" }}>
         <div className="rounded-2xl p-1 bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-900 shadow-[0_0_60px_rgba(0,0,0,0.7)]">
           <div className="rounded-xl overflow-hidden border border-neutral-500/30">
@@ -482,7 +491,6 @@ export default function ChessBoard() {
           </div>
         </div>
 
-        {/* Grand Check / Checkmate overlay */}
         {game.isCheckmate() && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div className="bg-red-600/95 text-white px-8 py-5 rounded-2xl shadow-2xl border-2 border-red-400 animate-pulse text-center max-w-[90%]">
@@ -503,7 +511,6 @@ export default function ChessBoard() {
         )}
       </div>
 
-      {/* Status text under board */}
       <div className="mt-4 text-center text-sm space-y-1">
         {isThinking && (
           <p className="text-blue-400 font-medium animate-pulse">
@@ -516,14 +523,16 @@ export default function ChessBoard() {
         {!game.isGameOver() && !isThinking && (
           <p className="text-neutral-400">
             {game.turn() === "w" ? "White" : "Black"} to move
-            <span className="text-neutral-500">
-              {" "}
-              •{" "}
-              {(game.turn() === "w" && playerColor === "white") ||
-              (game.turn() === "b" && playerColor === "black")
-                ? "Your turn"
-                : "Bot"}
-            </span>
+            {mode === "computer" && (
+              <span className="text-neutral-500">
+                {" "}
+                •{" "}
+                {(game.turn() === "w" && playerColor === "white") ||
+                (game.turn() === "b" && playerColor === "black")
+                  ? "Your turn"
+                  : "Bot"}
+              </span>
+            )}
           </p>
         )}
       </div>

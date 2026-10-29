@@ -49,7 +49,6 @@ export default function Home() {
     );
   }
 
-  // Login screen
   if (!user) {
     return (
       <main className="min-h-screen p-4 md:p-8 flex items-center justify-center bg-neutral-950">
@@ -64,11 +63,9 @@ export default function Home() {
     );
   }
 
-  // ========== HOME PAGE ==========
   if (section === "home") {
     return (
       <main className="min-h-screen bg-neutral-950 text-white relative overflow-hidden">
-        {/* Chess pattern background */}
         <div
           className="absolute inset-0 opacity-[0.03] pointer-events-none"
           style={{
@@ -76,7 +73,6 @@ export default function Home() {
           }}
         />
 
-        {/* Header */}
         <header className="relative max-w-5xl mx-auto px-4 pt-8 pb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-3xl">♔</span>
@@ -95,7 +91,6 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Hero */}
         <div className="relative max-w-5xl mx-auto px-4 text-center mb-12">
           <h2 className="text-3xl md:text-5xl font-bold mb-3">
             Improve Your Chess
@@ -105,7 +100,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Main Action Bubbles */}
         <div className="relative max-w-4xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-2 gap-5 mb-16">
           <button
             onClick={() => {
@@ -182,7 +176,6 @@ export default function Home() {
     );
   }
 
-  // ========== PLAY MENU ==========
   if (section === "play" && playMode === "menu") {
     return (
       <main className="min-h-screen bg-neutral-950 text-white relative">
@@ -254,7 +247,6 @@ export default function Home() {
     );
   }
 
-  // ========== OTHER SECTIONS / PLAY MODES ==========
   return (
     <main className="min-h-screen bg-neutral-950 text-white p-2 md:p-4">
       <div className="max-w-6xl mx-auto mb-3 flex items-center justify-between px-1">
@@ -287,10 +279,11 @@ export default function Home() {
 
       {(playMode === "bot" || playMode === "yourself" || playMode === "coach") && (
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Board takes almost full width on mobile, 2/3 on desktop */}
           <div className="lg:col-span-2">
             <div className="bg-neutral-900 rounded-2xl p-2 md:p-4 border border-neutral-800">
-              <ChessBoard />
+              <ChessBoard
+                initialMode={playMode === "yourself" ? "practice" : "computer"}
+              />
             </div>
           </div>
           <div>
@@ -303,8 +296,10 @@ export default function Home() {
                   {playMode === "yourself" && "Free Practice"}
                 </h3>
                 <p className="text-neutral-400 text-sm">
-                  {playMode === "bot" && "Choose difficulty on the board controls."}
-                  {playMode === "yourself" && "You control both White and Black."}
+                  {playMode === "bot" &&
+                    "Choose difficulty on the board controls."}
+                  {playMode === "yourself" &&
+                    "You control both White and Black. Reset anytime."}
                 </p>
               </div>
             )}
@@ -317,7 +312,8 @@ export default function Home() {
           <div className="text-6xl mb-6">🌍</div>
           <h2 className="text-2xl font-bold mb-3">Play vs Other Players</h2>
           <p className="text-neutral-400 mb-6">
-            Online multiplayer is coming soon. We will add matchmaking so you can play against real people around the world.
+            Online multiplayer is coming soon. We will add matchmaking so you can
+            play against real people around the world.
           </p>
           <button
             onClick={() => setPlayMode("menu")}
@@ -340,7 +336,10 @@ export default function Home() {
                 { title: "1. How the Pieces Move", level: "Beginner" },
                 { title: "2. Opening Principles", level: "Beginner" },
                 { title: "3. Basic Tactics - Forks", level: "Beginner" },
-                { title: "4. Basic Tactics - Pins & Skewers", level: "Intermediate" },
+                {
+                  title: "4. Basic Tactics - Pins & Skewers",
+                  level: "Intermediate",
+                },
                 { title: "5. King Safety & Castling", level: "Intermediate" },
                 { title: "6. Simple Endgames", level: "Intermediate" },
               ].map((lesson, i) => (
