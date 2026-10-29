@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
       ? `Recent board / analysis context (optional):\n${context}\n\nStudent question: ${question}`
       : `Student question: ${question}`;
 
-    // Prefer a fast, free-tier friendly model
-    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    // Default model (override with GEMINI_MODEL env if needed)
+    const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const geminiRes = await fetch(url, {
