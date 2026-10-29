@@ -105,9 +105,8 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Main Action Bubbles - Luxurious style */}
+        {/* Main Action Bubbles */}
         <div className="relative max-w-4xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-2 gap-5 mb-16">
-          {/* Play Game */}
           <button
             onClick={() => {
               setSection("play");
@@ -128,7 +127,6 @@ export default function Home() {
             </p>
           </button>
 
-          {/* Take Lesson */}
           <button
             onClick={() => setSection("lesson")}
             className="group relative rounded-3xl p-8 text-left transition-all duration-200
@@ -146,7 +144,6 @@ export default function Home() {
             </p>
           </button>
 
-          {/* Learn */}
           <button
             onClick={() => setSection("learn")}
             className="group relative rounded-3xl p-8 text-left transition-all duration-200
@@ -164,7 +161,6 @@ export default function Home() {
             </p>
           </button>
 
-          {/* Puzzle */}
           <button
             onClick={() => setSection("puzzle")}
             className="group relative rounded-3xl p-8 text-left transition-all duration-200
@@ -260,8 +256,8 @@ export default function Home() {
 
   // ========== OTHER SECTIONS / PLAY MODES ==========
   return (
-    <main className="min-h-screen bg-neutral-950 text-white p-4 md:p-6">
-      <div className="max-w-6xl mx-auto mb-6 flex items-center justify-between">
+    <main className="min-h-screen bg-neutral-950 text-white p-2 md:p-4">
+      <div className="max-w-6xl mx-auto mb-3 flex items-center justify-between px-1">
         <button
           onClick={() => {
             if (section === "play" && playMode !== "menu") {
@@ -271,7 +267,7 @@ export default function Home() {
               setPlayMode("menu");
             }
           }}
-          className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-xl transition text-sm active:scale-95"
+          className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 rounded-xl transition text-sm active:scale-95"
         >
           ← Back
         </button>
@@ -282,7 +278,7 @@ export default function Home() {
           </span>
           <button
             onClick={handleLogout}
-            className="px-4 py-2 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
+            className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
           >
             Logout
           </button>
@@ -290,9 +286,10 @@ export default function Home() {
       </div>
 
       {(playMode === "bot" || playMode === "yourself" || playMode === "coach") && (
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Board takes almost full width on mobile, 2/3 on desktop */}
           <div className="lg:col-span-2">
-            <div className="bg-neutral-900 rounded-2xl p-4 md:p-6 border border-neutral-800">
+            <div className="bg-neutral-900 rounded-2xl p-2 md:p-4 border border-neutral-800">
               <ChessBoard />
             </div>
           </div>
@@ -300,7 +297,7 @@ export default function Home() {
             {playMode === "coach" ? (
               <TeacherPanel />
             ) : (
-              <div className="bg-neutral-900 rounded-2xl p-6 border border-neutral-800">
+              <div className="bg-neutral-900 rounded-2xl p-5 border border-neutral-800">
                 <h3 className="font-semibold mb-2">
                   {playMode === "bot" && "Playing vs Bot"}
                   {playMode === "yourself" && "Free Practice"}

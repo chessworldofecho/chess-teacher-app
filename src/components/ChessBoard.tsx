@@ -43,24 +43,45 @@ export default function ChessBoard() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Simple free move sound using Web Audio API (no external files needed)
-  function playMoveSound(isCapture = false) {
+  function getAudioCtx() {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  }
+
+  // Short click / select sound
+  function playClickSound() {
     try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
-      }
-      const ctx = audioCtxRef.current;
+      const ctx = getAudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.05);
+    } catch {}
+  }
 
+  // Move sound
+  function playMoveSound(isCapture = false) {
+    try {
+      const ctx = getAudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       if (isCapture) {
         osc.frequency.setValueAtTime(180, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.setValueAtTime(0.28, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.15);
@@ -68,14 +89,60 @@ export default function ChessBoard() {
         osc.type = "sine";
         osc.frequency.setValueAtTime(420, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(280, ctx.currentTime + 0.08);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
       }
-    } catch (e) {
-      // ignore if audio not allowed
-    }
+    } catch {}
+  }
+
+  // Check sound (urgent)
+  function playCheckSound() {
+    try {
+      const ctx = getAudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(520, ctx.currentTime);
+      osc.frequency.setValueAtTime(780, ctx.currentTime + 0.08);
+      osc.frequency.setValueAtTime(520, ctx.currentTime + 0.16);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.25);
+    } catch {}
+  }
+
+  // Checkmate sound (dramatic)
+  function playCheckmateSound() {
+    try {
+      const ctx = getAudioCtx();
+      // Two-tone triumphant / final sound
+      [0, 0.18, 0.36].forEach((delay, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = i === 2 ? "sawtooth" : "square";
+        const freqs = [330, 440, 660];
+        osc.frequency.setValueAtTime(freqs[i], ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0.22, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.35);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.4);
+      });
+    } catch {}
+  }
+
+  function vibrate(pattern: number | number[]) {
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+    } catch {}
   }
 
   function getMoveOptions(square: Square) {
@@ -109,6 +176,10 @@ export default function ChessBoard() {
 
   function onSquareClick(square: Square) {
     if (phase !== "playing" || isThinking || game.isGameOver()) return;
+
+    // Click feedback
+    playClickSound();
+    vibrate(12);
 
     if (selectedSquare) {
       if (selectedSquare === square) {
@@ -163,7 +234,18 @@ export default function ChessBoard() {
 
     if (!result) return false;
 
+    // Feedback
     playMoveSound(!!result.captured);
+    vibrate(result.captured ? [30, 40, 30] : 25);
+
+    // Special feedback for check / checkmate
+    if (gameCopy.isCheckmate()) {
+      playCheckmateSound();
+      vibrate([80, 60, 80, 60, 120]);
+    } else if (gameCopy.isCheck()) {
+      playCheckSound();
+      vibrate([40, 30, 40]);
+    }
 
     setGame(gameCopy);
     setFen(gameCopy.fen());
@@ -196,7 +278,6 @@ export default function ChessBoard() {
   function makeComputerMove(currentFen: string) {
     setIsThinking(true);
 
-    // Higher difficulties "think" a bit longer for drama
     const thinkTime =
       difficulty === "god"
         ? 900 + Math.random() * 700
@@ -215,7 +296,6 @@ export default function ChessBoard() {
 
       let chosen = moves[Math.floor(Math.random() * moves.length)];
 
-      // Scale aggressiveness with difficulty
       const captures = moves.filter((m) => m.captured);
       const checks = moves.filter((m) => m.san.includes("+"));
       const checkmates = moves.filter((m) => m.san.includes("#"));
@@ -223,7 +303,6 @@ export default function ChessBoard() {
       if (checkmates.length > 0) {
         chosen = checkmates[Math.floor(Math.random() * checkmates.length)];
       } else if (difficulty === "god" || difficulty === "master") {
-        // Very aggressive
         if (checks.length > 0 && Math.random() > 0.25) {
           chosen = checks[Math.floor(Math.random() * checks.length)];
         } else if (captures.length > 0 && Math.random() > 0.2) {
@@ -240,12 +319,20 @@ export default function ChessBoard() {
           chosen = captures[Math.floor(Math.random() * captures.length)];
         }
       }
-      // beginner & easy stay mostly random
 
       const gameCopy = new Chess(currentFen);
       const result = gameCopy.move(chosen);
 
       playMoveSound(!!result?.captured);
+      vibrate(result?.captured ? [30, 40, 30] : 20);
+
+      if (gameCopy.isCheckmate()) {
+        playCheckmateSound();
+        vibrate([80, 60, 80, 60, 120]);
+      } else if (gameCopy.isCheck()) {
+        playCheckSound();
+        vibrate([40, 30, 40]);
+      }
 
       setGame(gameCopy);
       setFen(gameCopy.fen());
@@ -293,7 +380,6 @@ export default function ChessBoard() {
       <div className="max-w-md mx-auto">
         <h2 className="text-2xl font-bold mb-6 text-center">Start a Game</h2>
 
-        {/* Mode selection */}
         <div className="mb-8">
           <p className="text-sm text-neutral-400 mb-3">Choose mode</p>
           <div className="grid grid-cols-2 gap-3">
@@ -322,7 +408,6 @@ export default function ChessBoard() {
           </div>
         </div>
 
-        {/* Color selection */}
         <div className="mb-8">
           <p className="text-sm text-neutral-400 mb-3">Play as</p>
           <div className="grid grid-cols-2 gap-3">
@@ -349,7 +434,6 @@ export default function ChessBoard() {
           </div>
         </div>
 
-        {/* Difficulty (only for bot) */}
         {mode === "computer" && (
           <div className="mb-8">
             <p className="text-sm text-neutral-400 mb-3">Difficulty</p>
@@ -384,8 +468,8 @@ export default function ChessBoard() {
   // ========== PLAYING SCREEN ==========
   return (
     <div className="w-full">
-      {/* Minimal top bar during game */}
-      <div className="flex items-center justify-between mb-3">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-2 px-1">
         <div className="text-sm text-neutral-400">
           {mode === "computer" ? (
             <>
@@ -411,9 +495,9 @@ export default function ChessBoard() {
         </div>
       </div>
 
-      {/* Bigger board */}
-      <div className="relative mx-auto max-w-[min(100%,680px)]">
-        <div className="rounded-2xl p-1.5 bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-900 shadow-[0_0_50px_rgba(0,0,0,0.6)]">
+      {/* BIG BOARD - almost full width */}
+      <div className="relative w-full mx-auto" style={{ maxWidth: "min(100%, 760px)" }}>
+        <div className="rounded-2xl p-1 bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-900 shadow-[0_0_60px_rgba(0,0,0,0.7)]">
           <div className="rounded-xl overflow-hidden border border-neutral-500/30">
             <Chessboard
               position={fen}
@@ -435,23 +519,37 @@ export default function ChessBoard() {
             />
           </div>
         </div>
+
+        {/* Grand Check / Checkmate overlay */}
+        {game.isCheckmate() && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+            <div className="bg-red-600/95 text-white px-8 py-5 rounded-2xl shadow-2xl border-2 border-red-400 animate-pulse text-center max-w-[90%]">
+              <div className="text-4xl md:text-5xl font-black tracking-wide">CHECKMATE</div>
+              <div className="text-sm md:text-base mt-1 opacity-90 font-medium">
+                {game.turn() === "w" ? "Black" : "White"} wins!
+              </div>
+            </div>
+          </div>
+        )}
+
+        {game.isCheck() && !game.isCheckmate() && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div className="bg-orange-500 text-white px-5 py-1.5 rounded-full shadow-lg font-bold text-sm tracking-wider border border-orange-300 animate-pulse">
+              CHECK!
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Status */}
+      {/* Status text under board */}
       <div className="mt-4 text-center text-sm space-y-1">
         {isThinking && (
           <p className="text-blue-400 font-medium animate-pulse">
             Bot is thinking...
           </p>
         )}
-        {game.isCheckmate() && (
-          <p className="text-red-400 font-medium text-base">Checkmate! Game over.</p>
-        )}
-        {game.isDraw() && (
+        {game.isDraw() && !game.isCheckmate() && (
           <p className="text-yellow-400 font-medium text-base">Draw!</p>
-        )}
-        {game.isCheck() && !game.isCheckmate() && (
-          <p className="text-orange-400 font-medium">Check!</p>
         )}
         {!game.isGameOver() && !isThinking && (
           <p className="text-neutral-400">
