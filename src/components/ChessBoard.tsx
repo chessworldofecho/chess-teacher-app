@@ -39,6 +39,13 @@ type ChessBoardProps = {
   onAnalysis?: (text: string | null) => void;
 };
 
+type AnalysisEntry = {
+  result: AnalysisResult;
+  san: string;
+  mover: string;
+  moveNumber: number;
+};
+
 export default function ChessBoard({
   initialMode = "computer",
   onAnalysis,
@@ -57,7 +64,9 @@ export default function ChessBoard({
   );
   const [fenHistory, setFenHistory] = useState<string[]>([]);
   const [analysisOn, setAnalysisOn] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analysisHistory, setAnalysisHistory] = useState<AnalysisEntry[]>([]);
+  const [analysisIndex, setAnalysisIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,10 +167,37 @@ export default function ChessBoard({
     } catch {}
   }
 
-  function pushAnalysis(result: AnalysisResult | null) {
-    setAnalysis(result);
+  function clearAnalysisHistory() {
+    setAnalysisHistory([]);
+    setAnalysisIndex(0);
+    if (onAnalysis) onAnalysis(null);
+  }
+
+  function appendAnalysis(
+    result: AnalysisResult,
+    san: string,
+    mover: "w" | "b"
+  ) {
+    const moverName = mover === "w" ? "White" : "Black";
+    setAnalysisHistory((prev) => {
+      const moveNumber = prev.length + 1;
+      const next: AnalysisEntry[] = [
+        ...prev,
+        { result, san, mover: moverName, moveNumber },
+      ];
+      setAnalysisIndex(next.length - 1);
+      if (onAnalysis) {
+        onAnalysis(
+          `Move ${moveNumber} · ${moverName} played ${san}\n${result.title}: ${result.body}`
+        );
+      }
+      return next;
+    });
+  }
+
+  function showPositionAnalysis(result: AnalysisResult) {
     if (onAnalysis) {
-      onAnalysis(result ? `${result.title}: ${result.body}` : null);
+      onAnalysis(`${result.title}: ${result.body}`);
     }
   }
 
@@ -173,18 +209,55 @@ export default function ChessBoard({
   ) {
     if (!analysisOn) return;
     const result = analyzeLastMove(beforeFen, afterGame, san, mover);
-    pushAnalysis(result);
+    appendAnalysis(result, san, mover);
   }
 
   function toggleAnalysis() {
     const next = !analysisOn;
     setAnalysisOn(next);
     if (!next) {
-      pushAnalysis(null);
+      if (onAnalysis) onAnalysis(null);
+    } else if (analysisHistory.length > 0) {
+      setAnalysisIndex(analysisHistory.length - 1);
+      const last = analysisHistory[analysisHistory.length - 1];
+      if (onAnalysis) {
+        onAnalysis(
+          `Move ${last.moveNumber} · ${last.mover} played ${last.san}\n${last.result.title}: ${last.result.body}`
+        );
+      }
     } else {
-      const result = analyzeCurrentPosition(game);
-      pushAnalysis(result);
+      showPositionAnalysis(analyzeCurrentPosition(game));
     }
+  }
+
+  function goAnalysis(delta: number) {
+    setAnalysisIndex((i) => {
+      if (analysisHistory.length === 0) return 0;
+      const next = Math.max(0, Math.min(analysisHistory.length - 1, i + delta));
+      const entry = analysisHistory[next];
+      if (entry && onAnalysis) {
+        onAnalysis(
+          `Move ${entry.moveNumber} · ${entry.mover} played ${entry.san}\n${entry.result.title}: ${entry.result.body}`
+        );
+      }
+      return next;
+    });
+  }
+
+  function onAnalysisTouchStart(e: {
+    changedTouches: { clientX: number }[];
+  }) {
+    touchStartX.current = e.changedTouches[0]?.clientX ?? null;
+  }
+
+  function onAnalysisTouchEnd(e: { changedTouches: { clientX: number }[] }) {
+    if (touchStartX.current == null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
+    const dx = endX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) goAnalysis(1);
+    else goAnalysis(-1);
   }
 
   function getMoveOptions(square: Square) {
@@ -380,7 +453,22 @@ export default function ChessBoard({
     setOptionSquares({});
     playClickSound();
     vibrate(15);
-    if (analysisOn) pushAnalysis(analyzeCurrentPosition(restored));
+    setAnalysisHistory((prev) => {
+      const keep = Math.max(0, prev.length - steps);
+      const trimmed = prev.slice(0, keep);
+      setAnalysisIndex(Math.max(0, trimmed.length - 1));
+      if (analysisOn && trimmed.length > 0) {
+        const last = trimmed[trimmed.length - 1];
+        if (onAnalysis) {
+          onAnalysis(
+            `Move ${last.moveNumber} · ${last.mover} played ${last.san}\n${last.result.title}: ${last.result.body}`
+          );
+        }
+      } else if (analysisOn) {
+        showPositionAnalysis(analyzeCurrentPosition(restored));
+      }
+      return trimmed;
+    });
   }
 
   function startGame(color: "white" | "black") {
@@ -395,8 +483,8 @@ export default function ChessBoard({
     setOptionSquares({});
     setFenHistory([]);
     setPhase("playing");
-    if (analysisOn) pushAnalysis(analyzeCurrentPosition(newGame));
-    else pushAnalysis(null);
+    clearAnalysisHistory();
+    if (analysisOn) showPositionAnalysis(analyzeCurrentPosition(newGame));
     if (color === "black") {
       setTimeout(() => makeComputerMove(newGame.fen()), 500);
     }
@@ -414,12 +502,12 @@ export default function ChessBoard({
     setSelectedSquare(null);
     setOptionSquares({});
     setFenHistory([]);
+    clearAnalysisHistory();
     if (mode === "computer") {
       setPhase("setup");
-      pushAnalysis(null);
     } else {
       setPhase("playing");
-      if (analysisOn) pushAnalysis(analyzeCurrentPosition(newGame));
+      if (analysisOn) showPositionAnalysis(analyzeCurrentPosition(newGame));
     }
   }
 
@@ -429,6 +517,13 @@ export default function ChessBoard({
 
   const canRevert = fenHistory.length > 0 && phase === "playing";
   const customSquareStyles = useMemo(() => ({ ...optionSquares }), [optionSquares]);
+
+  const currentEntry =
+    analysisHistory.length > 0
+      ? analysisHistory[Math.min(analysisIndex, analysisHistory.length - 1)]
+      : null;
+  const analysis = currentEntry?.result ?? null;
+
   const analysisToneClass =
     analysis?.tone === "good"
       ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-100"
@@ -601,19 +696,62 @@ export default function ChessBoard({
         )}
       </div>
 
-      {analysisOn && analysis && (
-        <div className={`mt-4 rounded-xl border p-4 text-sm leading-relaxed ${analysisToneClass}`}>
-          <div className="font-semibold mb-1 flex items-center gap-2">
-            <span>📊</span>
-            <span>{analysis.title}</span>
+      {analysisOn && currentEntry && analysis && (
+        <div
+          className={`mt-4 rounded-xl border p-4 text-sm leading-relaxed select-none ${analysisToneClass}`}
+          onTouchStart={onAnalysisTouchStart}
+          onTouchEnd={onAnalysisTouchEnd}
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="font-semibold flex items-center gap-2 min-w-0">
+              <span>📊</span>
+              <span className="truncate">{analysis.title}</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => goAnalysis(-1)}
+                disabled={analysisIndex <= 0}
+                className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition ${
+                  analysisIndex <= 0
+                    ? "opacity-30 cursor-not-allowed"
+                    : "bg-black/20 hover:bg-black/30 active:scale-95"
+                }`}
+                aria-label="Previous analysis"
+              >
+                ‹
+              </button>
+              <span className="text-xs opacity-80 tabular-nums px-1">
+                {analysisIndex + 1}/{analysisHistory.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => goAnalysis(1)}
+                disabled={analysisIndex >= analysisHistory.length - 1}
+                className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition ${
+                  analysisIndex >= analysisHistory.length - 1
+                    ? "opacity-30 cursor-not-allowed"
+                    : "bg-black/20 hover:bg-black/30 active:scale-95"
+                }`}
+                aria-label="Next analysis"
+              >
+                ›
+              </button>
+            </div>
           </div>
+          <p className="text-xs opacity-80 mb-2">
+            Move {currentEntry.moveNumber} · {currentEntry.mover} played{" "}
+            <span className="font-semibold">{currentEntry.san}</span>
+            <span className="opacity-60"> · swipe or use arrows</span>
+          </p>
           <p className="opacity-95 whitespace-pre-wrap">{analysis.body}</p>
         </div>
       )}
 
-      {analysisOn && !analysis && (
+      {analysisOn && !currentEntry && (
         <div className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 p-4 text-sm text-neutral-400">
-          Analysis is on. Make a move to get feedback on what was good and what to do next.
+          Analysis is on. Make a move to get feedback. You can swipe left/right
+          on the analysis card to review every move.
         </div>
       )}
     </div>
