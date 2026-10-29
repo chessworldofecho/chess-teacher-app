@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { Chess } from "chess.js";
+import { Chess, Square } from "chess.js";
 
 const Chessboard = dynamic(
   () => import("react-chessboard").then((mod) => mod.Chessboard),
@@ -27,72 +27,101 @@ export default function ChessBoard() {
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [isThinking, setIsThinking] = useState(false);
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [optionSquares, setOptionSquares] = useState<Record<string, any>>({});
 
-  function makeAMove(move: { from: string; to: string; promotion?: string }) {
-    const gameCopy = new Chess(game.fen());
-    try {
-      const result = gameCopy.move(move);
-      if (result) {
-        setGame(gameCopy);
-        setFen(gameCopy.fen());
-        return true;
-      }
-    } catch {
+  // Get legal moves for a square
+  function getMoveOptions(square: Square) {
+    const moves = game.moves({
+      square,
+      verbose: true,
+    });
+
+    if (moves.length === 0) {
+      setOptionSquares({});
       return false;
     }
-    return false;
+
+    const newSquares: Record<string, any> = {};
+
+    // Highlight the selected piece
+    newSquares[square] = {
+      background:
+        "radial-gradient(circle, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.15) 40%, transparent 50%)",
+    };
+
+    moves.forEach((move) => {
+      const isCapture = move.captured;
+
+      newSquares[move.to] = {
+        background: isCapture
+          ? "radial-gradient(circle, transparent 55%, rgba(220, 38, 38, 0.45) 55%)"
+          : "radial-gradient(circle, rgba(0,0,0,0.18) 25%, transparent 25%)",
+        borderRadius: "50%",
+      };
+    });
+
+    setOptionSquares(newSquares);
+    return true;
   }
 
-  // Simple free bot (picks a random legal move)
-  // Later we will replace this with real Stockfish WASM
-  function makeComputerMove(currentFen: string) {
-    setIsThinking(true);
+  function onSquareClick(square: Square) {
+    if (isThinking || game.isGameOver()) return;
 
-    setTimeout(() => {
-      const tempGame = new Chess(currentFen);
-      const moves = tempGame.moves({ verbose: true });
-
-      if (moves.length === 0) {
-        setIsThinking(false);
+    // If we already selected a piece, try to move
+    if (selectedSquare) {
+      // Clicked the same square again → deselect
+      if (selectedSquare === square) {
+        setSelectedSquare(null);
+        setOptionSquares({});
         return;
       }
 
-      // Very basic difficulty: higher levels prefer captures / checks a bit more
-      let chosen = moves[Math.floor(Math.random() * moves.length)];
+      // Try to make the move
+      const moveSuccessful = tryMove(selectedSquare, square);
 
-      if (difficulty === "hard" || difficulty === "master") {
-        const captures = moves.filter((m) => m.captured);
-        const checks = moves.filter((m) => m.san.includes("+"));
-        if (checks.length > 0 && Math.random() > 0.4) {
-          chosen = checks[Math.floor(Math.random() * checks.length)];
-        } else if (captures.length > 0 && Math.random() > 0.3) {
-          chosen = captures[Math.floor(Math.random() * captures.length)];
-        }
+      if (moveSuccessful) {
+        setSelectedSquare(null);
+        setOptionSquares({});
+        return;
       }
 
-      const gameCopy = new Chess(currentFen);
-      gameCopy.move(chosen);
-      setGame(gameCopy);
-      setFen(gameCopy.fen());
-      setIsThinking(false);
-    }, 600 + Math.random() * 800); // thinking delay
-  }
+      // If move failed, check if user clicked another of their pieces
+      const piece = game.get(square);
+      if (piece && piece.color === game.turn()) {
+        setSelectedSquare(square);
+        getMoveOptions(square);
+      } else {
+        setSelectedSquare(null);
+        setOptionSquares({});
+      }
+      return;
+    }
 
-  function handlePlayerMove(sourceSquare: string, targetSquare: string) {
-    if (isThinking) return false;
+    // No piece selected yet – select if it's the player's piece
+    const piece = game.get(square);
+    if (!piece) return;
 
     const isPlayerTurn =
+      mode === "practice" ||
       (playerColor === "white" && game.turn() === "w") ||
       (playerColor === "black" && game.turn() === "b");
 
-    if (mode === "computer" && !isPlayerTurn) return false;
+    if (!isPlayerTurn) return;
+    if (piece.color !== game.turn()) return;
 
+    setSelectedSquare(square);
+    getMoveOptions(square);
+  }
+
+  function tryMove(from: string, to: string) {
     const gameCopy = new Chess(game.fen());
     let result;
+
     try {
       result = gameCopy.move({
-        from: sourceSquare,
-        to: targetSquare,
+        from,
+        to,
         promotion: "q",
       });
     } catch {
@@ -112,11 +141,64 @@ export default function ChessBoard() {
     return true;
   }
 
+  // Also keep drag & drop working
+  function onPieceDrop(sourceSquare: string, targetSquare: string) {
+    if (isThinking) return false;
+
+    const isPlayerTurn =
+      mode === "practice" ||
+      (playerColor === "white" && game.turn() === "w") ||
+      (playerColor === "black" && game.turn() === "b");
+
+    if (mode === "computer" && !isPlayerTurn) return false;
+
+    const success = tryMove(sourceSquare, targetSquare);
+    if (success) {
+      setSelectedSquare(null);
+      setOptionSquares({});
+    }
+    return success;
+  }
+
+  function makeComputerMove(currentFen: string) {
+    setIsThinking(true);
+
+    setTimeout(() => {
+      const tempGame = new Chess(currentFen);
+      const moves = tempGame.moves({ verbose: true });
+
+      if (moves.length === 0) {
+        setIsThinking(false);
+        return;
+      }
+
+      let chosen = moves[Math.floor(Math.random() * moves.length)];
+
+      if (difficulty === "hard" || difficulty === "master") {
+        const captures = moves.filter((m) => m.captured);
+        const checks = moves.filter((m) => m.san.includes("+"));
+        if (checks.length > 0 && Math.random() > 0.4) {
+          chosen = checks[Math.floor(Math.random() * checks.length)];
+        } else if (captures.length > 0 && Math.random() > 0.3) {
+          chosen = captures[Math.floor(Math.random() * captures.length)];
+        }
+      }
+
+      const gameCopy = new Chess(currentFen);
+      gameCopy.move(chosen);
+      setGame(gameCopy);
+      setFen(gameCopy.fen());
+      setIsThinking(false);
+    }, 500 + Math.random() * 700);
+  }
+
   function resetGame() {
     const newGame = new Chess();
     setGame(newGame);
     setFen(newGame.fen());
     setIsThinking(false);
+    setSelectedSquare(null);
+    setOptionSquares({});
 
     if (mode === "computer" && playerColor === "black") {
       setTimeout(() => makeComputerMove(newGame.fen()), 500);
@@ -135,11 +217,18 @@ export default function ChessBoard() {
     setGame(newGame);
     setFen(newGame.fen());
     setIsThinking(false);
+    setSelectedSquare(null);
+    setOptionSquares({});
 
     if (color === "black") {
       setTimeout(() => makeComputerMove(newGame.fen()), 600);
     }
   }
+
+  // Combine highlight styles
+  const customSquareStyles = useMemo(() => {
+    return { ...optionSquares };
+  }, [optionSquares]);
 
   return (
     <div className="chessboard-container">
@@ -151,13 +240,13 @@ export default function ChessBoard() {
           <div className="flex gap-2">
             <button
               onClick={flipBoard}
-              className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition"
+              className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
             >
               Flip
             </button>
             <button
               onClick={resetGame}
-              className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition"
+              className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
             >
               Reset
             </button>
@@ -170,7 +259,7 @@ export default function ChessBoard() {
               setMode("practice");
               resetGame();
             }}
-            className={`px-4 py-1.5 text-sm rounded-lg transition ${
+            className={`px-4 py-1.5 text-sm rounded-lg transition active:scale-95 ${
               mode === "practice"
                 ? "bg-emerald-600 text-white"
                 : "bg-neutral-800 hover:bg-neutral-700"
@@ -180,7 +269,7 @@ export default function ChessBoard() {
           </button>
           <button
             onClick={() => startVsComputer("white")}
-            className={`px-4 py-1.5 text-sm rounded-lg transition ${
+            className={`px-4 py-1.5 text-sm rounded-lg transition active:scale-95 ${
               mode === "computer" && playerColor === "white"
                 ? "bg-emerald-600 text-white"
                 : "bg-neutral-800 hover:bg-neutral-700"
@@ -190,7 +279,7 @@ export default function ChessBoard() {
           </button>
           <button
             onClick={() => startVsComputer("black")}
-            className={`px-4 py-1.5 text-sm rounded-lg transition ${
+            className={`px-4 py-1.5 text-sm rounded-lg transition active:scale-95 ${
               mode === "computer" && playerColor === "black"
                 ? "bg-emerald-600 text-white"
                 : "bg-neutral-800 hover:bg-neutral-700"
@@ -206,7 +295,7 @@ export default function ChessBoard() {
               <button
                 key={level}
                 onClick={() => setDifficulty(level)}
-                className={`px-3 py-1 text-xs rounded-full transition ${
+                className={`px-3 py-1 text-xs rounded-full transition active:scale-95 ${
                   difficulty === level
                     ? "bg-blue-600 text-white"
                     : "bg-neutral-800 hover:bg-neutral-700"
@@ -219,18 +308,29 @@ export default function ChessBoard() {
         )}
       </div>
 
-      <Chessboard
-        position={fen}
-        onPieceDrop={handlePlayerMove}
-        boardOrientation={orientation}
-        customBoardStyle={{
-          borderRadius: "8px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-        }}
-        customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-        customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-        arePiecesDraggable={!isThinking && !game.isGameOver()}
-      />
+      {/* Luxurious board container */}
+      <div className="relative rounded-2xl p-1.5 bg-gradient-to-br from-neutral-700 via-neutral-800 to-neutral-900 shadow-[0_0_40px_rgba(0,0,0,0.5)]">
+        <div className="rounded-xl overflow-hidden border border-neutral-600/40">
+          <Chessboard
+            position={fen}
+            onSquareClick={onSquareClick}
+            onPieceDrop={onPieceDrop}
+            boardOrientation={orientation}
+            customSquareStyles={customSquareStyles}
+            customBoardStyle={{
+              borderRadius: "0px",
+            }}
+            customDarkSquareStyle={{
+              backgroundColor: "#769656",
+            }}
+            customLightSquareStyle={{
+              backgroundColor: "#eeeed2",
+            }}
+            arePiecesDraggable={!isThinking && !game.isGameOver()}
+            animationDuration={200}
+          />
+        </div>
+      </div>
 
       <div className="mt-4 text-sm text-neutral-400 space-y-1">
         {isThinking && (
