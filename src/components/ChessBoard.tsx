@@ -44,12 +44,15 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [optionSquares, setOptionSquares] = useState<Record<string, any>>({});
-  // Practice starts playing immediately; bot mode starts at setup
   const [phase, setPhase] = useState<GamePhase>(
     initialMode === "practice" ? "playing" : "setup"
   );
+  // Stack of FENs so we can revert (undo)
+  const [fenHistory, setFenHistory] = useState<string[]>([]);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // Cancel pending bot moves when reverting
+  const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function getAudioCtx() {
     if (!audioCtxRef.current) {
@@ -236,6 +239,9 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
 
     if (!result) return false;
 
+    // Save position before this move for revert
+    setFenHistory((prev) => [...prev, game.fen()]);
+
     playMoveSound(!!result.captured);
     vibrate(result.captured ? [30, 40, 30] : 25);
 
@@ -278,6 +284,10 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   function makeComputerMove(currentFen: string) {
     setIsThinking(true);
 
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+    }
+
     const thinkTime =
       difficulty === "god"
         ? 900 + Math.random() * 700
@@ -285,7 +295,7 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
         ? 650 + Math.random() * 500
         : 400 + Math.random() * 500;
 
-    setTimeout(() => {
+    botTimeoutRef.current = setTimeout(() => {
       const tempGame = new Chess(currentFen);
       const moves = tempGame.moves({ verbose: true });
 
@@ -323,6 +333,9 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
       const gameCopy = new Chess(currentFen);
       const result = gameCopy.move(chosen);
 
+      // Save position before bot move for revert
+      setFenHistory((prev) => [...prev, currentFen]);
+
       playMoveSound(!!result?.captured);
       vibrate(result?.captured ? [30, 40, 30] : 20);
 
@@ -337,7 +350,48 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
       setGame(gameCopy);
       setFen(gameCopy.fen());
       setIsThinking(false);
+      botTimeoutRef.current = null;
     }, thinkTime);
+  }
+
+  function revertMove() {
+    if (fenHistory.length === 0) return;
+
+    // Cancel pending bot move if any
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+      botTimeoutRef.current = null;
+      setIsThinking(false);
+    }
+
+    // Practice: undo 1 move
+    // Computer: undo 2 moves when possible (player + bot) so it's your turn again
+    let steps = 1;
+    if (mode === "computer" && fenHistory.length >= 2 && !isThinking) {
+      steps = 2;
+    }
+
+    // If bot is still thinking, only undo the player move that triggered it
+    if (isThinking) {
+      steps = 1;
+      setIsThinking(false);
+    }
+
+    const newHistory = [...fenHistory];
+    let targetFen = newHistory[newHistory.length - 1];
+
+    for (let i = 0; i < steps && newHistory.length > 0; i++) {
+      targetFen = newHistory.pop()!;
+    }
+
+    setFenHistory(newHistory);
+    const restored = new Chess(targetFen);
+    setGame(restored);
+    setFen(targetFen);
+    setSelectedSquare(null);
+    setOptionSquares({});
+    playClickSound();
+    vibrate(15);
   }
 
   function startGame(color: "white" | "black") {
@@ -350,6 +404,7 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
     setIsThinking(false);
     setSelectedSquare(null);
     setOptionSquares({});
+    setFenHistory([]);
     setPhase("playing");
 
     if (color === "black") {
@@ -358,17 +413,21 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   }
 
   function resetBoard() {
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+      botTimeoutRef.current = null;
+    }
     const newGame = new Chess();
     setGame(newGame);
     setFen(newGame.fen());
     setIsThinking(false);
     setSelectedSquare(null);
     setOptionSquares({});
+    setFenHistory([]);
 
     if (mode === "computer") {
       setPhase("setup");
     } else {
-      // Practice: stay on the board, just reset position
       setPhase("playing");
     }
   }
@@ -376,6 +435,8 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   function flipBoard() {
     setOrientation((o) => (o === "white" ? "black" : "white"));
   }
+
+  const canRevert = fenHistory.length > 0 && phase === "playing";
 
   const customSquareStyles = useMemo(() => {
     return { ...optionSquares };
@@ -445,13 +506,24 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   // ========== PLAYING SCREEN ==========
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="text-sm text-neutral-400">
+      <div className="flex items-center justify-between mb-2 px-1 gap-2">
+        <div className="text-sm text-neutral-400 truncate">
           {mode === "computer"
             ? `vs Bot • ${DIFFICULTY_LABELS[difficulty]}`
             : "Practice Mode • Move both sides"}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={revertMove}
+            disabled={!canRevert}
+            className={`px-3 py-1.5 text-sm rounded-lg transition active:scale-95 ${
+              canRevert
+                ? "bg-amber-700 hover:bg-amber-600 text-white"
+                : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+            }`}
+          >
+            Revert
+          </button>
           <button
             onClick={flipBoard}
             className="px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-lg transition active:scale-95"
