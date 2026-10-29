@@ -2,14 +2,6 @@
 
 import { useState, useEffect } from "react";
 
-const sampleTips = [
-  "Control the center with your pawns and pieces early in the game.",
-  "Develop your knights and bishops before moving the same piece twice.",
-  "Castle early to keep your king safe.",
-  "Look for forks – attacking two pieces at once is powerful.",
-  "Don't bring your queen out too early.",
-];
-
 type TeacherPanelProps = {
   /** Live analysis text from the board when Analysis is on */
   analysisFeedback?: string | null;
@@ -17,9 +9,10 @@ type TeacherPanelProps = {
 
 export default function TeacherPanel({ analysisFeedback }: TeacherPanelProps) {
   const [message, setMessage] = useState(
-    "Hello! I'm your Chess Teacher. Turn on Analysis on the board to get feedback after every move, or ask me anything below."
+    "Hello! I'm your Chess Teacher. Ask me anything about openings, tactics, endgames, or the current game. Turn on Analysis on the board for move-by-move tips."
   );
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (analysisFeedback) {
@@ -27,15 +20,40 @@ export default function TeacherPanel({ analysisFeedback }: TeacherPanelProps) {
     }
   }, [analysisFeedback]);
 
-  function sendMessage() {
-    if (!input.trim()) return;
+  async function sendMessage(questionOverride?: string) {
+    const question = (questionOverride ?? input).trim();
+    if (!question || loading) return;
 
-    setMessage(
-      `You asked: "${input}"\n\nGreat question! (Full AI teacher coming soon). For now, remember: ${
-        sampleTips[Math.floor(Math.random() * sampleTips.length)]
-      }`
-    );
+    setLoading(true);
+    setMessage("Thinking...");
     setInput("");
+
+    try {
+      const res = await fetch("/api/teacher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          context: analysisFeedback || undefined,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage(
+          data?.error ||
+            "Could not reach the teacher. Check that GEMINI_API_KEY is set on the server."
+        );
+        return;
+      }
+
+      setMessage(`You asked: "${question}"\n\n${data.answer}`);
+    } catch {
+      setMessage("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -55,13 +73,15 @@ export default function TeacherPanel({ analysisFeedback }: TeacherPanelProps) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Ask the teacher anything..."
-          className="flex-1 bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+          disabled={loading}
+          className="flex-1 bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-60"
         />
         <button
-          onClick={sendMessage}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium transition"
+          onClick={() => sendMessage()}
+          disabled={loading || !input.trim()}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition"
         >
-          Ask
+          {loading ? "..." : "Ask"}
         </button>
       </div>
 
@@ -69,10 +89,9 @@ export default function TeacherPanel({ analysisFeedback }: TeacherPanelProps) {
         {["Explain openings", "Show a fork", "King safety tips"].map((q) => (
           <button
             key={q}
-            onClick={() => {
-              setInput(q);
-            }}
-            className="text-xs px-3 py-1 bg-neutral-800 hover:bg-neutral-700 rounded-full transition"
+            onClick={() => sendMessage(q)}
+            disabled={loading}
+            className="text-xs px-3 py-1 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 rounded-full transition"
           >
             {q}
           </button>
