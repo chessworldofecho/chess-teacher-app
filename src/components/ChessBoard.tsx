@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Chess, Square } from "chess.js";
 
@@ -9,15 +9,24 @@ const Chessboard = dynamic(
   { ssr: false }
 );
 
-type Difficulty = "beginner" | "easy" | "intermediate" | "hard" | "master";
+type Difficulty =
+  | "beginner"
+  | "easy"
+  | "intermediate"
+  | "hard"
+  | "expert"
+  | "master"
+  | "god";
 type GamePhase = "setup" | "playing";
 
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  beginner: "Beginner (~800)",
-  easy: "Easy (~1200)",
-  intermediate: "Intermediate (~1600)",
+  beginner: "Beginner (~100)",
+  easy: "Easy (~600)",
+  intermediate: "Intermediate (~1400)",
   hard: "Hard (~2000)",
-  master: "Master (~2500+)",
+  expert: "Expert (~2800)",
+  master: "Master (~3600)",
+  god: "God Mode (~5000)",
 };
 
 export default function ChessBoard() {
@@ -38,7 +47,8 @@ export default function ChessBoard() {
   function playMoveSound(isCapture = false) {
     try {
       if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = new (window.AudioContext ||
+          (window as any).webkitAudioContext)();
       }
       const ctx = audioCtxRef.current;
       const osc = ctx.createOscillator();
@@ -186,6 +196,14 @@ export default function ChessBoard() {
   function makeComputerMove(currentFen: string) {
     setIsThinking(true);
 
+    // Higher difficulties "think" a bit longer for drama
+    const thinkTime =
+      difficulty === "god"
+        ? 900 + Math.random() * 700
+        : difficulty === "master" || difficulty === "expert"
+        ? 650 + Math.random() * 500
+        : 400 + Math.random() * 500;
+
     setTimeout(() => {
       const tempGame = new Chess(currentFen);
       const moves = tempGame.moves({ verbose: true });
@@ -197,15 +215,32 @@ export default function ChessBoard() {
 
       let chosen = moves[Math.floor(Math.random() * moves.length)];
 
-      if (difficulty === "hard" || difficulty === "master") {
-        const captures = moves.filter((m) => m.captured);
-        const checks = moves.filter((m) => m.san.includes("+"));
+      // Scale aggressiveness with difficulty
+      const captures = moves.filter((m) => m.captured);
+      const checks = moves.filter((m) => m.san.includes("+"));
+      const checkmates = moves.filter((m) => m.san.includes("#"));
+
+      if (checkmates.length > 0) {
+        chosen = checkmates[Math.floor(Math.random() * checkmates.length)];
+      } else if (difficulty === "god" || difficulty === "master") {
+        // Very aggressive
+        if (checks.length > 0 && Math.random() > 0.25) {
+          chosen = checks[Math.floor(Math.random() * checks.length)];
+        } else if (captures.length > 0 && Math.random() > 0.2) {
+          chosen = captures[Math.floor(Math.random() * captures.length)];
+        }
+      } else if (difficulty === "expert" || difficulty === "hard") {
         if (checks.length > 0 && Math.random() > 0.4) {
           chosen = checks[Math.floor(Math.random() * checks.length)];
-        } else if (captures.length > 0 && Math.random() > 0.3) {
+        } else if (captures.length > 0 && Math.random() > 0.35) {
+          chosen = captures[Math.floor(Math.random() * captures.length)];
+        }
+      } else if (difficulty === "intermediate") {
+        if (captures.length > 0 && Math.random() > 0.5) {
           chosen = captures[Math.floor(Math.random() * captures.length)];
         }
       }
+      // beginner & easy stay mostly random
 
       const gameCopy = new Chess(currentFen);
       const result = gameCopy.move(chosen);
@@ -215,7 +250,7 @@ export default function ChessBoard() {
       setGame(gameCopy);
       setFen(gameCopy.fen());
       setIsThinking(false);
-    }, 450 + Math.random() * 600);
+    }, thinkTime);
   }
 
   function startGame(color: "white" | "black", gameMode: "practice" | "computer") {
@@ -350,7 +385,7 @@ export default function ChessBoard() {
   return (
     <div className="w-full">
       {/* Minimal top bar during game */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div className="text-sm text-neutral-400">
           {mode === "computer" ? (
             <>
@@ -376,8 +411,8 @@ export default function ChessBoard() {
         </div>
       </div>
 
-      {/* Big luxurious board */}
-      <div className="relative mx-auto max-w-[min(100%,520px)]">
+      {/* Bigger board */}
+      <div className="relative mx-auto max-w-[min(100%,680px)]">
         <div className="rounded-2xl p-1.5 bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-900 shadow-[0_0_50px_rgba(0,0,0,0.6)]">
           <div className="rounded-xl overflow-hidden border border-neutral-500/30">
             <Chessboard
@@ -403,7 +438,7 @@ export default function ChessBoard() {
       </div>
 
       {/* Status */}
-      <div className="mt-5 text-center text-sm space-y-1">
+      <div className="mt-4 text-center text-sm space-y-1">
         {isThinking && (
           <p className="text-blue-400 font-medium animate-pulse">
             Bot is thinking...
