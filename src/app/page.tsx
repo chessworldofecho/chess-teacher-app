@@ -16,6 +16,7 @@ export default function Home() {
   const [playMode, setPlayMode] = useState<PlayMode>("menu");
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [coachAnalysis, setCoachAnalysis] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -254,6 +255,7 @@ export default function Home() {
           onClick={() => {
             if (section === "play" && playMode !== "menu") {
               setPlayMode("menu");
+              setCoachAnalysis(null);
             } else {
               setSection("home");
               setPlayMode("menu");
@@ -283,12 +285,15 @@ export default function Home() {
             <div className="bg-neutral-900 rounded-2xl p-2 md:p-4 border border-neutral-800">
               <ChessBoard
                 initialMode={playMode === "yourself" ? "practice" : "computer"}
+                onAnalysis={
+                  playMode === "coach" ? setCoachAnalysis : undefined
+                }
               />
             </div>
           </div>
           <div>
             {playMode === "coach" ? (
-              <TeacherPanel />
+              <TeacherPanel analysisFeedback={coachAnalysis} />
             ) : (
               <div className="bg-neutral-900 rounded-2xl p-5 border border-neutral-800">
                 <h3 className="font-semibold mb-2">
@@ -297,9 +302,9 @@ export default function Home() {
                 </h3>
                 <p className="text-neutral-400 text-sm">
                   {playMode === "bot" &&
-                    "Choose difficulty on the board controls."}
+                    "Turn on Analysis to get feedback after every move."}
                   {playMode === "yourself" &&
-                    "You control both White and Black. Reset anytime."}
+                    "You control both sides. Turn on Analysis for tips."}
                 </p>
               </div>
             )}

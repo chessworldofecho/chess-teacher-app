@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const sampleTips = [
   "Control the center with your pawns and pieces early in the game.",
@@ -10,16 +10,30 @@ const sampleTips = [
   "Don't bring your queen out too early.",
 ];
 
-export default function TeacherPanel() {
-  const [message, setMessage] = useState("Hello! I'm your Chess Teacher. Make a move on the board and I'll give you feedback. What would you like to learn today?");
+type TeacherPanelProps = {
+  /** Live analysis text from the board when Analysis is on */
+  analysisFeedback?: string | null;
+};
+
+export default function TeacherPanel({ analysisFeedback }: TeacherPanelProps) {
+  const [message, setMessage] = useState(
+    "Hello! I'm your Chess Teacher. Turn on Analysis on the board to get feedback after every move, or ask me anything below."
+  );
   const [input, setInput] = useState("");
+
+  useEffect(() => {
+    if (analysisFeedback) {
+      setMessage(analysisFeedback);
+    }
+  }, [analysisFeedback]);
 
   function sendMessage() {
     if (!input.trim()) return;
 
-    // Placeholder – later this will call an AI teacher
     setMessage(
-      `You asked: "${input}"\n\nGreat question! (Full AI teacher coming soon). For now, remember: ${sampleTips[Math.floor(Math.random() * sampleTips.length)]}`
+      `You asked: "${input}"\n\nGreat question! (Full AI teacher coming soon). For now, remember: ${
+        sampleTips[Math.floor(Math.random() * sampleTips.length)]
+      }`
     );
     setInput("");
   }
@@ -30,7 +44,7 @@ export default function TeacherPanel() {
         <span>♟</span> Chess Teacher
       </h2>
 
-      <div className="flex-1 bg-neutral-950 rounded-xl p-4 mb-4 text-sm leading-relaxed overflow-y-auto min-h-[180px]">
+      <div className="flex-1 bg-neutral-950 rounded-xl p-4 mb-4 text-sm leading-relaxed overflow-y-auto min-h-[180px] whitespace-pre-wrap">
         {message}
       </div>
 

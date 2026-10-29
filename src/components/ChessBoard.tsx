@@ -3,6 +3,11 @@
 import { useState, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Chess, Square } from "chess.js";
+import {
+  analyzeLastMove,
+  analyzeCurrentPosition,
+  type AnalysisResult,
+} from "@/lib/chessAnalysis";
 
 const Chessboard = dynamic(
   () => import("react-chessboard").then((mod) => mod.Chessboard),
@@ -30,11 +35,15 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
 };
 
 type ChessBoardProps = {
-  /** "computer" = vs bot with setup screen, "practice" = free board move both sides */
   initialMode?: "computer" | "practice";
+  /** Called when analysis produces new feedback (for Coach panel, etc.) */
+  onAnalysis?: (text: string | null) => void;
 };
 
-export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps) {
+export default function ChessBoard({
+  initialMode = "computer",
+  onAnalysis,
+}: ChessBoardProps) {
   const [game, setGame] = useState(new Chess());
   const [fen, setFen] = useState(game.fen());
   const [orientation, setOrientation] = useState<"white" | "black">("white");
@@ -47,11 +56,11 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   const [phase, setPhase] = useState<GamePhase>(
     initialMode === "practice" ? "playing" : "setup"
   );
-  // Stack of FENs so we can revert (undo)
   const [fenHistory, setFenHistory] = useState<string[]>([]);
+  const [analysisOn, setAnalysisOn] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
-  // Cancel pending bot moves when reverting
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function getAudioCtx() {
@@ -151,6 +160,36 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
     } catch {}
   }
 
+  function pushAnalysis(result: AnalysisResult | null) {
+    setAnalysis(result);
+    if (onAnalysis) {
+      onAnalysis(result ? `${result.title}: ${result.body}` : null);
+    }
+  }
+
+  function runAnalysis(
+    beforeFen: string,
+    afterGame: Chess,
+    san: string,
+    mover: "w" | "b"
+  ) {
+    if (!analysisOn) return;
+    const result = analyzeLastMove(beforeFen, afterGame, san, mover);
+    pushAnalysis(result);
+  }
+
+  function toggleAnalysis() {
+    const next = !analysisOn;
+    setAnalysisOn(next);
+    if (!next) {
+      pushAnalysis(null);
+    } else {
+      // Analyze current position when turning on
+      const result = analyzeCurrentPosition(game);
+      pushAnalysis(result);
+    }
+  }
+
   function getMoveOptions(square: Square) {
     const moves = game.moves({ square, verbose: true });
 
@@ -228,7 +267,9 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
   }
 
   function tryMove(from: string, to: string) {
-    const gameCopy = new Chess(game.fen());
+    const beforeFen = game.fen();
+    const mover = game.turn();
+    const gameCopy = new Chess(beforeFen);
     let result;
 
     try {
@@ -239,8 +280,7 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
 
     if (!result) return false;
 
-    // Save position before this move for revert
-    setFenHistory((prev) => [...prev, game.fen()]);
+    setFenHistory((prev) => [...prev, beforeFen]);
 
     playMoveSound(!!result.captured);
     vibrate(result.captured ? [30, 40, 30] : 25);
@@ -255,6 +295,8 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
 
     setGame(gameCopy);
     setFen(gameCopy.fen());
+
+    runAnalysis(beforeFen, gameCopy, result.san, mover);
 
     if (mode === "computer" && !gameCopy.isGameOver()) {
       makeComputerMove(gameCopy.fen());
@@ -330,10 +372,10 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
         }
       }
 
+      const mover = tempGame.turn();
       const gameCopy = new Chess(currentFen);
       const result = gameCopy.move(chosen);
 
-      // Save position before bot move for revert
       setFenHistory((prev) => [...prev, currentFen]);
 
       playMoveSound(!!result?.captured);
@@ -351,27 +393,26 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
       setFen(gameCopy.fen());
       setIsThinking(false);
       botTimeoutRef.current = null;
+
+      if (result) {
+        runAnalysis(currentFen, gameCopy, result.san, mover);
+      }
     }, thinkTime);
   }
 
   function revertMove() {
     if (fenHistory.length === 0) return;
 
-    // Cancel pending bot move if any
     if (botTimeoutRef.current) {
       clearTimeout(botTimeoutRef.current);
       botTimeoutRef.current = null;
       setIsThinking(false);
     }
 
-    // Practice: undo 1 move
-    // Computer: undo 2 moves when possible (player + bot) so it's your turn again
     let steps = 1;
     if (mode === "computer" && fenHistory.length >= 2 && !isThinking) {
       steps = 2;
     }
-
-    // If bot is still thinking, only undo the player move that triggered it
     if (isThinking) {
       steps = 1;
       setIsThinking(false);
@@ -392,6 +433,10 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
     setOptionSquares({});
     playClickSound();
     vibrate(15);
+
+    if (analysisOn) {
+      pushAnalysis(analyzeCurrentPosition(restored));
+    }
   }
 
   function startGame(color: "white" | "black") {
@@ -406,6 +451,11 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
     setOptionSquares({});
     setFenHistory([]);
     setPhase("playing");
+    if (analysisOn) {
+      pushAnalysis(analyzeCurrentPosition(newGame));
+    } else {
+      pushAnalysis(null);
+    }
 
     if (color === "black") {
       setTimeout(() => makeComputerMove(newGame.fen()), 500);
@@ -427,8 +477,12 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
 
     if (mode === "computer") {
       setPhase("setup");
+      pushAnalysis(null);
     } else {
       setPhase("playing");
+      if (analysisOn) {
+        pushAnalysis(analyzeCurrentPosition(newGame));
+      }
     }
   }
 
@@ -442,7 +496,16 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
     return { ...optionSquares };
   }, [optionSquares]);
 
-  // ========== SETUP SCREEN (bot only) ==========
+  const analysisToneClass =
+    analysis?.tone === "good"
+      ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-100"
+      : analysis?.tone === "bad"
+      ? "border-red-500/50 bg-red-950/40 text-red-100"
+      : analysis?.tone === "info"
+      ? "border-blue-500/40 bg-blue-950/30 text-blue-100"
+      : "border-amber-500/40 bg-amber-950/30 text-amber-100";
+
+  // ========== SETUP SCREEN ==========
   if (phase === "setup" && mode === "computer") {
     return (
       <div className="max-w-md mx-auto">
@@ -512,7 +575,17 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
             ? `vs Bot • ${DIFFICULTY_LABELS[difficulty]}`
             : "Practice Mode • Move both sides"}
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+          <button
+            onClick={toggleAnalysis}
+            className={`px-3 py-1.5 text-sm rounded-lg transition active:scale-95 ${
+              analysisOn
+                ? "bg-violet-600 hover:bg-violet-500 text-white"
+                : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
+            }`}
+          >
+            {analysisOn ? "Analysis On" : "Analysis"}
+          </button>
           <button
             onClick={revertMove}
             disabled={!canRevert}
@@ -608,6 +681,26 @@ export default function ChessBoard({ initialMode = "computer" }: ChessBoardProps
           </p>
         )}
       </div>
+
+      {/* Analysis panel */}
+      {analysisOn && analysis && (
+        <div
+          className={`mt-4 rounded-xl border p-4 text-sm leading-relaxed ${analysisToneClass}`}
+        >
+          <div className="font-semibold mb-1 flex items-center gap-2">
+            <span>📊</span>
+            <span>{analysis.title}</span>
+          </div>
+          <p className="opacity-95">{analysis.body}</p>
+        </div>
+      )}
+
+      {analysisOn && !analysis && (
+        <div className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 p-4 text-sm text-neutral-400">
+          Analysis is on. Make a move to get feedback on what was good and what
+          to do next.
+        </div>
+      )}
     </div>
   );
 }
