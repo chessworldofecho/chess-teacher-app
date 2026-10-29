@@ -120,7 +120,6 @@ export default function ChessBoard() {
   function playCheckmateSound() {
     try {
       const ctx = getAudioCtx();
-      // Two-tone triumphant / final sound
       [0, 0.18, 0.36].forEach((delay, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -177,7 +176,6 @@ export default function ChessBoard() {
   function onSquareClick(square: Square) {
     if (phase !== "playing" || isThinking || game.isGameOver()) return;
 
-    // Click feedback
     playClickSound();
     vibrate(12);
 
@@ -234,11 +232,9 @@ export default function ChessBoard() {
 
     if (!result) return false;
 
-    // Feedback
     playMoveSound(!!result.captured);
     vibrate(result.captured ? [30, 40, 30] : 25);
 
-    // Special feedback for check / checkmate
     if (gameCopy.isCheckmate()) {
       playCheckmateSound();
       vibrate([80, 60, 80, 60, 120]);
@@ -340,8 +336,8 @@ export default function ChessBoard() {
     }, thinkTime);
   }
 
-  function startGame(color: "white" | "black", gameMode: "practice" | "computer") {
-    setMode(gameMode);
+  function startGame(color: "white" | "black") {
+    setMode("computer");
     setPlayerColor(color);
     setOrientation(color);
     const newGame = new Chess();
@@ -352,7 +348,7 @@ export default function ChessBoard() {
     setOptionSquares({});
     setPhase("playing");
 
-    if (gameMode === "computer" && color === "black") {
+    if (color === "black") {
       setTimeout(() => makeComputerMove(newGame.fen()), 500);
     }
   }
@@ -380,34 +376,7 @@ export default function ChessBoard() {
       <div className="max-w-md mx-auto">
         <h2 className="text-2xl font-bold mb-6 text-center">Start a Game</h2>
 
-        <div className="mb-8">
-          <p className="text-sm text-neutral-400 mb-3">Choose mode</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setMode("computer")}
-              className={`p-4 rounded-2xl border transition active:scale-95 ${
-                mode === "computer"
-                  ? "bg-emerald-600/20 border-emerald-500 text-white"
-                  : "bg-neutral-900 border-neutral-700 text-neutral-300"
-              }`}
-            >
-              <div className="text-2xl mb-1">🤖</div>
-              <div className="font-medium">vs Bot</div>
-            </button>
-            <button
-              onClick={() => setMode("practice")}
-              className={`p-4 rounded-2xl border transition active:scale-95 ${
-                mode === "practice"
-                  ? "bg-emerald-600/20 border-emerald-500 text-white"
-                  : "bg-neutral-900 border-neutral-700 text-neutral-300"
-              }`}
-            >
-              <div className="text-2xl mb-1">🧘</div>
-              <div className="font-medium">Practice</div>
-            </button>
-          </div>
-        </div>
-
+        {/* Play as */}
         <div className="mb-8">
           <p className="text-sm text-neutral-400 mb-3">Play as</p>
           <div className="grid grid-cols-2 gap-3">
@@ -434,29 +403,28 @@ export default function ChessBoard() {
           </div>
         </div>
 
-        {mode === "computer" && (
-          <div className="mb-8">
-            <p className="text-sm text-neutral-400 mb-3">Difficulty</p>
-            <div className="flex flex-wrap gap-2">
-              {(Object.keys(DIFFICULTY_LABELS) as Difficulty[]).map((level) => (
-                <button
-                  key={level}
-                  onClick={() => setDifficulty(level)}
-                  className={`px-3 py-2 text-sm rounded-xl transition active:scale-95 ${
-                    difficulty === level
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  {DIFFICULTY_LABELS[level]}
-                </button>
-              ))}
-            </div>
+        {/* Difficulty */}
+        <div className="mb-8">
+          <p className="text-sm text-neutral-400 mb-3">Difficulty</p>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(DIFFICULTY_LABELS) as Difficulty[]).map((level) => (
+              <button
+                key={level}
+                onClick={() => setDifficulty(level)}
+                className={`px-3 py-2 text-sm rounded-xl transition active:scale-95 ${
+                  difficulty === level
+                    ? "bg-blue-600 text-white"
+                    : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                }`}
+              >
+                {DIFFICULTY_LABELS[level]}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         <button
-          onClick={() => startGame(playerColor, mode)}
+          onClick={() => startGame(playerColor)}
           className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-semibold text-lg transition active:scale-[0.98] shadow-lg shadow-emerald-900/30"
         >
           Start Game
@@ -471,13 +439,7 @@ export default function ChessBoard() {
       {/* Top bar */}
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="text-sm text-neutral-400">
-          {mode === "computer" ? (
-            <>
-              vs Bot • {DIFFICULTY_LABELS[difficulty]}
-            </>
-          ) : (
-            "Practice Mode"
-          )}
+          vs Bot • {DIFFICULTY_LABELS[difficulty]}
         </div>
         <div className="flex gap-2">
           <button
@@ -495,7 +457,7 @@ export default function ChessBoard() {
         </div>
       </div>
 
-      {/* BIG BOARD - almost full width */}
+      {/* BIG BOARD */}
       <div className="relative w-full mx-auto" style={{ maxWidth: "min(100%, 760px)" }}>
         <div className="rounded-2xl p-1 bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-900 shadow-[0_0_60px_rgba(0,0,0,0.7)]">
           <div className="rounded-xl overflow-hidden border border-neutral-500/30">
@@ -554,16 +516,14 @@ export default function ChessBoard() {
         {!game.isGameOver() && !isThinking && (
           <p className="text-neutral-400">
             {game.turn() === "w" ? "White" : "Black"} to move
-            {mode === "computer" && (
-              <span className="text-neutral-500">
-                {" "}
-                •{" "}
-                {(game.turn() === "w" && playerColor === "white") ||
-                (game.turn() === "b" && playerColor === "black")
-                  ? "Your turn"
-                  : "Bot"}
-              </span>
-            )}
+            <span className="text-neutral-500">
+              {" "}
+              •{" "}
+              {(game.turn() === "w" && playerColor === "white") ||
+              (game.turn() === "b" && playerColor === "black")
+                ? "Your turn"
+                : "Bot"}
+            </span>
           </p>
         )}
       </div>
